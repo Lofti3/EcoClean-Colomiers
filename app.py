@@ -5,7 +5,7 @@ from streamlit_folium import st_folium
 from datetime import datetime
 
 # =========================================================
-# ECOCLEAN COLOMIERS — V2
+# ECOCLEAN COLOMIERS — V3 CITOYENNE
 # =========================================================
 
 st.set_page_config(
@@ -34,7 +34,9 @@ st.markdown(
 )
 
 # ---------------------------------------------------------
-# BASE DE DONNÉES DE DÉMO
+# DONNÉES DE DÉMONSTRATION
+# Tous les exemples sont initialement "À ramasser".
+# Un citoyen peut ensuite les marquer comme ramassés.
 # ---------------------------------------------------------
 
 DEMO_DATA = [
@@ -46,15 +48,17 @@ DEMO_DATA = [
         "lng": 1.3325,
         "adresse": "Près du Parc Duroch",
         "date": "2026-09-01",
+        "description": "Déchet visible dans l'espace public.",
     },
     {
         "id": 2,
         "type": "🥤 Canette / Bouteille plastique",
-        "statut": "🟢 Ramassé !",
+        "statut": "🔴 À ramasser",
         "lat": 43.6110,
         "lng": 1.3340,
         "adresse": "Axe Gare de Colomiers",
         "date": "2026-09-02",
+        "description": "Déchet signalé par un citoyen.",
     },
     {
         "id": 3,
@@ -64,20 +68,25 @@ DEMO_DATA = [
         "lng": 1.3352,
         "adresse": "Centre-ville / Vieux Colomiers",
         "date": "2026-09-05",
+        "description": "Plusieurs mégots regroupés.",
     },
     {
         "id": 4,
         "type": "🍬 Emballage de bonbon / Papiers",
-        "statut": "🟢 Ramassé !",
+        "statut": "🔴 À ramasser",
         "lat": 43.6122,
         "lng": 1.3295,
         "adresse": "Secteur du Pigeonnier",
         "date": "2026-09-06",
+        "description": "Petits emballages abandonnés.",
     },
 ]
 
 if "dechets_db" not in st.session_state:
     st.session_state.dechets_db = pd.DataFrame(DEMO_DATA)
+
+if "actions_ramassage" not in st.session_state:
+    st.session_state.actions_ramassage = []
 
 # ---------------------------------------------------------
 # HELPERS
@@ -85,10 +94,11 @@ if "dechets_db" not in st.session_state:
 
 def get_counts(df):
     total = len(df)
-    ramasses = int((df["statut"] == "🟢 Ramassé !").sum())
+    ramasses = int((df["statut"] == "🟢 Ramassé").sum())
     restants = int((df["statut"] == "🔴 À ramasser").sum())
     taux = round((ramasses / total) * 100) if total else 0
-    return total, ramasses, restants, taux
+    contributeurs = len(set(st.session_state.actions_ramassage))
+    return total, ramasses, restants, taux, contributeurs
 
 
 def build_map(df):
@@ -102,24 +112,25 @@ def build_map(df):
     folium.Marker(
         COLOMIERS_COORDS,
         tooltip="🌱 EcoClean Colomiers",
-        popup="Point central de Colomiers",
+        popup="Plateforme citoyenne de Colomiers",
         icon=folium.Icon(color="blue", icon="home", prefix="fa"),
     ).add_to(m)
 
     for _, row in df.iterrows():
         couleur = "red" if row["statut"] == "🔴 À ramasser" else "green"
         popup_html = f"""
-        <div style='width:240px;font-family:Arial,sans-serif'>
+        <div style='width:250px;font-family:Arial,sans-serif'>
             <h4 style='margin-bottom:8px'>{row['type']}</h4>
             <b>Statut :</b> {row['statut']}<br>
             <b>Lieu :</b> {row['adresse']}<br>
             <b>Date :</b> {row['date']}<br>
+            <b>Description :</b> {row.get('description', '')}<br>
             <b>ID :</b> #{int(row['id'])}
         </div>
         """
         folium.Marker(
             location=[row["lat"], row["lng"]],
-            popup=folium.Popup(popup_html, max_width=320),
+            popup=folium.Popup(popup_html, max_width=330),
             tooltip=f"#{int(row['id'])} — {row['type']}",
             icon=folium.Icon(color=couleur, icon="trash", prefix="fa"),
         ).add_to(m)
@@ -133,7 +144,7 @@ def build_map(df):
 st.markdown('<div class="hero">', unsafe_allow_html=True)
 st.markdown('<div class="main-title">🌱 EcoClean Colomiers</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="subtitle">La plateforme citoyenne pour signaler, suivre et réduire les micro-déchets à Colomiers.</div>',
+    '<div class="subtitle">Une plateforme citoyenne pour signaler, ramasser et réduire les micro-déchets à Colomiers.</div>',
     unsafe_allow_html=True,
 )
 st.markdown('</div>', unsafe_allow_html=True)
@@ -143,12 +154,8 @@ st.markdown('</div>', unsafe_allow_html=True)
 # ---------------------------------------------------------
 
 with st.sidebar:
-    st.image(
-        "https://em-content.zobj.net/source/apple/391/seedling_1f331.png",
-        width=55,
-    )
-    st.markdown("## EcoClean V2")
-    st.caption("Prototype citoyen — Colomiers")
+    st.markdown("# 🌱 EcoClean")
+    st.caption("La propreté de Colomiers, c'est l'affaire de tous.")
     st.markdown("---")
 
     menu = st.radio(
@@ -157,65 +164,70 @@ with st.sidebar:
             "🏠 Accueil",
             "🗺️ Carte des déchets",
             "📸 Signaler un déchet",
-            "📊 Tableau de bord",
+            "📊 Impact citoyen",
         ],
     )
 
     st.markdown("---")
-    st.caption("💡 V2 : filtres, indicateurs, carte interactive et gestion des ramassages.")
+    st.caption("💚 Chaque citoyen peut signaler un déchet ou contribuer à son ramassage.")
 
 # =========================================================
 # ACCUEIL
 # =========================================================
 
 if menu == "🏠 Accueil":
-    total, ramasses, restants, taux = get_counts(st.session_state.dechets_db)
+    total, ramasses, restants, taux, contributeurs = get_counts(st.session_state.dechets_db)
 
     st.subheader("Bienvenue sur EcoClean Colomiers 👋")
     st.write(
-        "EcoClean permet aux habitants de signaler rapidement les micro-déchets "
-        "présents dans l'espace public et de suivre leur prise en charge."
+        "Vous voyez un déchet abandonné ? Signalez-le. Vous passez près d'un déchet signalé ? "
+        "Vous pouvez le ramasser et contribuer à améliorer votre ville."
     )
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("🗑️ Signalements", total)
-    c2.metric("🟢 Ramassés", ramasses)
+    c2.metric("🧤 Ramassés", ramasses)
     c3.metric("🔴 À ramasser", restants)
-    c4.metric("♻️ Taux de nettoyage", f"{taux}%")
+    c4.metric("👥 Contributeurs", contributeurs)
 
     st.markdown("---")
-    left, right = st.columns([1.25, 1])
+    left, right = st.columns([1.2, 1])
 
     with left:
-        st.markdown("### 🎯 Comment ça marche ?")
+        st.markdown("### 🤝 Comment participer ?")
         st.markdown(
             """
-            **1. 📸 Signaler** — indiquez le type et la localisation du déchet.  
-            **2. 🗺️ Visualiser** — retrouvez les signalements directement sur la carte.  
-            **3. 🧤 Agir** — un déchet ramassé peut être marqué comme nettoyé.  
-            **4. 📊 Mesurer** — suivez l'évolution de l'impact local.
+            **1. 📸 Signaler** — vous trouvez un déchet et le signalez sur EcoClean.  
+            **2. 🗺️ Localiser** — le signalement apparaît sur la carte de Colomiers.  
+            **3. 🧤 Ramasser** — n'importe quel citoyen peut décider de le ramasser.  
+            **4. ✅ Confirmer** — cliquez sur « Je l'ai ramassé » pour mettre à jour la carte.
             """
         )
 
     with right:
-        st.markdown("### 🌱 Objectif")
+        st.markdown("### 🌱 Notre objectif")
         st.info(
-            "Transformer les petits signalements du quotidien en données utiles "
-            "pour encourager l'action citoyenne et identifier les zones prioritaires."
+            "Créer une dynamique citoyenne simple : une personne signale, une autre peut agir. "
+            "EcoClean transforme ces petits gestes en impact collectif."
         )
 
-    st.markdown("### 📍 Situation actuelle")
+    st.markdown("### 📍 État actuel")
     if restants:
-        st.warning(f"{restants} signalement(s) sont encore à traiter.")
+        st.warning(f"🔴 {restants} déchet(s) sont actuellement signalés comme étant à ramasser.")
     else:
-        st.success("Tous les signalements sont actuellement traités 🎉")
+        st.success("🎉 Aucun déchet signalé n'est actuellement en attente !")
+
+    st.markdown("### 🧤 Vous avez envie d'agir ?")
+    st.write("Consultez la carte et choisissez un déchet que vous pouvez ramasser en toute sécurité.")
+    if st.button("🗺️ Voir les déchets à ramasser", use_container_width=True):
+        st.info("Utilisez le menu à gauche pour ouvrir la carte des déchets.")
 
 # =========================================================
 # CARTE
 # =========================================================
 
 elif menu == "🗺️ Carte des déchets":
-    st.subheader("🗺️ Carte interactive des micro-déchets")
+    st.subheader("🗺️ Carte citoyenne des micro-déchets")
     st.caption("🔴 À ramasser · 🟢 Ramassé")
 
     df = st.session_state.dechets_db.copy()
@@ -224,8 +236,8 @@ elif menu == "🗺️ Carte des déchets":
     with f1:
         statut_filter = st.multiselect(
             "Statut",
-            ["🔴 À ramasser", "🟢 Ramassé !"],
-            default=["🔴 À ramasser", "🟢 Ramassé !"],
+            ["🔴 À ramasser", "🟢 Ramassé"],
+            default=["🔴 À ramasser", "🟢 Ramassé"],
         )
     with f2:
         types = sorted(df["type"].unique().tolist())
@@ -243,15 +255,17 @@ elif menu == "🗺️ Carte des déchets":
     if secteur_filter:
         df = df[df["adresse"].isin(secteur_filter)]
 
-    st.info(f"📍 {len(df)} signalement(s) correspondent aux filtres sélectionnés.")
+    st.info(f"📍 {len(df)} signalement(s) affiché(s) sur la carte.")
     st_folium(build_map(df), width=None, height=560, returned_objects=[])
 
-    st.markdown("### 🧤 Actions de ramassage")
+    st.markdown("### 🧤 Agir maintenant")
+    st.caption("Si vous ramassez réellement un déchet, utilisez le bouton correspondant pour informer la communauté.")
+
     if df.empty:
         st.info("Aucun signalement ne correspond aux filtres.")
     else:
         for index, row in df.iterrows():
-            col1, col2, col3 = st.columns([3.5, 2, 1])
+            col1, col2, col3 = st.columns([3.5, 2, 1.4])
             with col1:
                 st.markdown(
                     f"**#{int(row['id'])} — {row['type']}**  \n"
@@ -261,10 +275,13 @@ elif menu == "🗺️ Carte des déchets":
                 st.write(f"Statut : **{row['statut']}**")
             with col3:
                 if row["statut"] == "🔴 À ramasser":
-                    if st.button("✅ Ramassé", key=f"ramassage_{int(row['id'])}"):
-                        st.session_state.dechets_db.at[index, "statut"] = "🟢 Ramassé !"
-                        st.success("Signalement mis à jour.")
+                    if st.button("🧤 Je l'ai ramassé", key=f"ramassage_{int(row['id'])}"):
+                        st.session_state.dechets_db.at[index, "statut"] = "🟢 Ramassé"
+                        st.session_state.actions_ramassage.append(f"citoyen_{len(st.session_state.actions_ramassage)+1}")
+                        st.success("Merci pour votre geste ! Le déchet est maintenant indiqué comme ramassé.")
                         st.rerun()
+                else:
+                    st.success("✓ Ramassé")
 
 # =========================================================
 # SIGNALER
@@ -273,8 +290,7 @@ elif menu == "🗺️ Carte des déchets":
 elif menu == "📸 Signaler un déchet":
     st.subheader("📸 Signaler un micro-déchet")
     st.write(
-        "Un déchet abandonné dans l'espace public ? Ajoutez son emplacement "
-        "pour le rendre visible sur la carte."
+        "Vous avez repéré un déchet dans l'espace public ? Signalez-le pour que les autres citoyens puissent le voir."
     )
 
     with st.form("form_signalement", clear_on_submit=True):
@@ -327,7 +343,7 @@ elif menu == "📸 Signaler un déchet":
             placeholder="Ex. : plusieurs emballages près d'un banc...",
         )
 
-        submitted = st.form_submit_button("🚨 Valider le signalement", use_container_width=True)
+        submitted = st.form_submit_button("🚨 Signaler ce déchet", use_container_width=True)
 
     if submitted:
         db = st.session_state.dechets_db
@@ -338,55 +354,56 @@ elif menu == "📸 Signaler un déchet":
             "statut": "🔴 À ramasser",
             "lat": lat,
             "lng": lng,
-            "adresse": secteur + (f" — {description}" if description else ""),
+            "adresse": secteur,
             "date": datetime.now().strftime("%Y-%m-%d"),
+            "description": description or "Aucune description.",
         }
         st.session_state.dechets_db = pd.concat(
             [db, pd.DataFrame([nouvelle_ligne])], ignore_index=True
         )
-        st.success("🎉 Merci ! Le signalement a été ajouté à la carte EcoClean Colomiers.")
+        st.success("🎉 Merci ! Votre signalement est maintenant visible sur la carte.")
         st.balloons()
 
 # =========================================================
-# TABLEAU DE BORD
+# IMPACT CITOYEN
 # =========================================================
 
-elif menu == "📊 Tableau de bord":
-    st.subheader("📊 Tableau de bord — Impact environnemental")
+elif menu == "📊 Impact citoyen":
+    st.subheader("📊 Impact citoyen")
+    st.write("Découvrez l'impact collectif des habitants qui utilisent EcoClean.")
 
     df = st.session_state.dechets_db.copy()
-    total, ramasses, restants, taux = get_counts(df)
+    total, ramasses, restants, taux, contributeurs = get_counts(df)
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("🗑️ Total", total)
-    c2.metric("🟢 Nettoyés", ramasses)
-    c3.metric("🔴 En attente", restants)
+    c1.metric("🗑️ Déchets signalés", total)
+    c2.metric("🧤 Déchets ramassés", ramasses)
+    c3.metric("🔴 Encore à ramasser", restants)
     c4.metric("♻️ Taux de nettoyage", f"{taux}%")
 
     st.markdown("---")
 
     left, right = st.columns(2)
-
     with left:
         st.markdown("### 📈 Déchets par type")
         if not df.empty:
-            repartition = df["type"].value_counts()
-            st.bar_chart(repartition)
+            st.bar_chart(df["type"].value_counts())
 
     with right:
         st.markdown("### 📍 Signalements par secteur")
         if not df.empty:
-            secteurs = df["adresse"].str.split(" — ").str[0].value_counts()
+            secteurs = df["adresse"].value_counts()
             st.bar_chart(secteurs)
 
-    st.markdown("### 🕒 Derniers signalements")
-    if not df.empty:
-        derniers = df.sort_values("date", ascending=False).copy()
-        st.dataframe(
-            derniers[["id", "type", "statut", "adresse", "date"]],
-            use_container_width=True,
-            hide_index=True,
-        )
+    st.markdown("### 🌱 Message collectif")
+    if ramasses:
+        st.success(f"Bravo ! La communauté a déjà permis de retirer {ramasses} déchet(s) de l'espace public. 💚")
+    else:
+        st.info("Aucun ramassage n'a encore été enregistré. Le prochain geste peut être le vôtre ! 🧤")
+
+    st.markdown("### 🏆 Contribution citoyenne")
+    st.write(f"👥 Actions de ramassage enregistrées : **{len(st.session_state.actions_ramassage)}**")
+    st.caption("Cette version prototype ne demande pas de compte personnel : les contributions sont comptabilisées anonymement.")
 
 # ---------------------------------------------------------
 # FOOTER
@@ -394,5 +411,5 @@ elif menu == "📊 Tableau de bord":
 
 st.markdown("---")
 st.caption(
-    f"🌱 EcoClean Colomiers V2 · Prototype citoyen · {datetime.now().strftime('%d/%m/%Y')}"
+    f"🌱 EcoClean Colomiers V3 · Plateforme citoyenne · {datetime.now().strftime('%d/%m/%Y')}"
 )
